@@ -1,8 +1,17 @@
 ################################################
 # Power calculations for NAIMS Traveling Study Proposal
 # Russell Shinohara
-# February 23, 2018
+# August 13, 2018
 ################################################
+# bsub -o output_all.txt -R "span[hosts=1]" -q cceb_normal -n 20 -J "NAIMSpower[1-18]" < power_calculations.sh
+################################################
+
+jobindex<-as.numeric(Sys.getenv("LSB_JOBINDEX"))
+
+prop.dropout.phase2<-expand.grid(seq(0,0.5,0.1),3:1)[jobindex,1]
+n.1.dropout<-expand.grid(seq(0,0.5,0.1),3:1)[jobindex,2]
+
+sink(paste0('output_n30_dropout',n.1.dropout,'-',prop.dropout.phase2,'.txt'),append=FALSE,split=FALSE)
 
 # This function gets the ANOVA F statistic for site.
 get.F<-function(y,site) {
@@ -79,11 +88,11 @@ library(parallel)
 
 B<-1000 # Number of simulations
 B.perm<-1000 # Number of permutations to use for each permutation test
-J<-8 # number of sites
+J<-10 # number of sites
 n.1<-3 # number of subjects in Phase I
-n.2<-32 # number of subjects in Phase II
+n.2<-30 # number of subjects in Phase II
 
-m<-3 # number of subjects recruited at each site
+m<-3 # number of sites each subject is imaged at in Phase II
 
 t.vol<-13.5 # mean volume of thalamus
 l.vol<-18 # mean volume of T2 lesions
@@ -111,10 +120,15 @@ sd.l.meas<-0.5 ## estimated from pilot data manual T2 lesion volumes - using sam
 sd.t.site<-0.4 ## estimated from pilot data FIRST thalamic volumes - using sample sd of first acquisitions on Skyra scanners. 
 sd.l.site<-0.6 # estimated from pilot data manual T2 lesion volumes - using sample sd of first acquisitions on Skyra scanners. 
 
-scanner.models<-c(1,2,0,2,1,1,2,1) # based on scanner model (2=Prisma, 1=Skyra, 0=Trio)
-coil.channels<-factor(c(20,20,64,64,32,32,32,32,32,32,20,20,64,64,20,20,32,32)) 
+## FIX FROM HERE ON
+
+sites<-c('PEN','CHP','COR','HOP','VAN','BUF','BWH','MGH','UVM','NIH')
+
+scanner.models<-c(0,0,0,2,2,1,1,1,2,0) # based on scanner manufacturer (2=Philips, 1=GE, 0=Siemens)
+coil.channels<-factor(c(32,32,64,64,20,20,32,32,8,8,16,16,8,8,16,16,32,32,20,20,32,32))
+
 ## NOTE - there is an extra 2 entries in coil.channels since we're scanning twice on the last (NIH) scanner
-## NOTE - scanner order is BWH, CHOP, JHU, MGH, Sinai, Cornell, Penn, NIH
+
 
 ################################################
 ################################################
@@ -126,16 +140,16 @@ coil.channels<-factor(c(20,20,64,64,32,32,32,32,32,32,20,20,64,64,20,20,32,32))
 
 ### CROSS-SECTIONAL ANALYSIS - PHASE I POWER CALCULATIONS FOR DETECTING SITE EFFECTS
 get.power.phase1<-function(bias.par,B=500) {
-  id<-factor(rep(101:103,2*(J+1)))  
+  id<-factor(rep(101:(100+n.1),2*(J+1)))  
   site<-factor(rep(c(1:J,J),each=2*n.1))
   l.p<-rep(NA,B);t.p<-rep(NA,B) # tests for proportion of variation explained by site
   
   for (b in 1:B) {
     #Sample demographics
-    age<-runif(3,min.age,max.age)
-  	onset<-pmax(age-runif(3,min.dd,max.dd),10)
+    age<-runif(n.1,min.age,max.age)
+  	onset<-pmax(age-runif(n.1,min.dd,max.dd),10)
   	dd<-age-onset
-  	sex<-c(1,1,0) # ASSUME WE WILL RECRUIT 2 FEMALES FOR PHASE I
+  	sex<-c(floor(rep(1,n.1/2)),floor(rep(0,n.1/2)))
 
     #Sample imaging measures
   	t<-rnorm(n.1,t.vol,sd.t.vol) + (age-50)*t.age.beta + sex*t.sex.beta + dd*t.dd.beta
@@ -146,7 +160,7 @@ get.power.phase1<-function(bias.par,B=500) {
     site.eff.l<-rnorm(J,0,sd.l.site);site.eff.l<-c(site.eff.l,site.eff.l[length(site.eff.l)])
 
     #Specify acquisition biases
-  	scanner.bias<-bias.par*c(scanner.models,1) # based on scanner model (2=Prisma, 1=Skyra, 0=Trio)
+  	scanner.bias<-bias.par*c(scanner.models,0) # based on scanner manufacturer
     coil.bias<-bias.par/2*as.numeric(coil.channels) # conservatively, assume receive coils are responsible for an additional 50% of variation
 
     #Sample observed data with both scanner and coil effects
@@ -162,7 +176,9 @@ get.power.phase1<-function(bias.par,B=500) {
 }
 
 set.seed(529349245)
-mclapply(seq(0,1,by=0.1),get.power.phase1,mc.cores=20)
+print('CROSS-SECTIONAL ANALYSIS - PHASE II POWER CALCULATIONS FOR DETECTING SCANNER AND COIL EFFECTS')
+system.time(out<-mclapply(seq(0,1,by=0.1),get.power.phase1,mc.cores=20))
+print(out)
 
 ### CROSS-SECTIONAL ANALYSIS - PHASE II POWER CALCULATIONS FOR DETECTING SCANNER AND COIL EFFECTS
 get.power.phase2<-function(bias.par,B=500) {  
@@ -207,7 +223,7 @@ get.power.phase2<-function(bias.par,B=500) {
     for (j in 1:n.2) { # for each subject
       for (k in 1:m) { # for each site that subject is imaged at
 
-        this.visit.site<-site[rep(id.phase2,each=3)==j][k]
+        this.visit.site<-site[rep(id.phase2,each=m)==j][k]
         # if NIH, who will scan subjects on two coils
         if (this.visit.site==J) {
           t.obs.phase2<-c(t.obs.phase2,rep(t[j],4)+bias.par*rep(scanner.models[J],4)+bias.par/2*as.numeric(coil.channels)[(2*J-1):length(coil.channels)]+rep(site.eff.t[J],4)+rnorm(4,0,sd.t.meas))
@@ -265,8 +281,11 @@ get.power.phase2<-function(bias.par,B=500) {
 
 # LOOK AT HOW SMALL THE MANUFACTURER BIASES CAN BE
 set.seed(529349245)
-mclapply(seq(0,1,by=0.1),get.power.phase2,mc.cores=20)
-mclapply(seq(1,2,by=0.1),get.power.phase2,mc.cores=20)
+print('CROSS-SECTIONAL ANALYSIS - PHASE I')
+system.time(out1<-mclapply(seq(0,1,by=0.1),get.power.phase2,mc.cores=20))
+print(out1)
+system.time(out2<-mclapply(seq(1,2,by=0.1),get.power.phase2,mc.cores=20))
+print(out2)
 
 # we can detect:
 # for thalamus - scanner effects of 0.8mL or larger (under assumptions)
@@ -280,11 +299,12 @@ mclapply(seq(1,2,by=0.1),get.power.phase2,mc.cores=20)
 ################################################
 ################################################
 
+
 ### AIM 2 - PHASE I POWER CALCULATIONS FOR SITE EFFECTS
 get.power.phase1.longit.dropout<-function(sd.site.longit,longit.bias.par,B=500) {
-  id<-factor(rep(101:102,2*(J+1)))  
-  n.1<-2
-  site<-factor(c(rep(1:J,each=2*n.1),rep(J,each=2*n.1)))
+  n.1.dropout<-2
+  id<-factor(rep(101:(100+2),2*(J+1)))  
+  site<-factor(c(rep(1:J,each=2*n.1.dropout),rep(J,each=2*n.1.dropout)))
   l.p<-rep(NA,B);t.p<-rep(NA,B) # tests for proportion of variation explained by site
   l.comp.p<-rep(NA,B);t.comp.p<-rep(NA,B) # tests for proportion of variation explained by site
   pb <- txtProgressBar(min = 0, max = B, style = 3)
@@ -303,8 +323,8 @@ get.power.phase1.longit.dropout<-function(sd.site.longit,longit.bias.par,B=500) 
     coil.bias<-longit.bias.par/2*as.numeric(coil.channels) # conservatively, assume receive coils are responsible for an additional 50% of variation
 
     #Sample observed data with both scanner and coil effects
-    t.obs<-rep(t,2*(J+1))+rep(scanner.bias,each=2*n.1)+rep(coil.bias,each=n.1)+rep(site.eff.t,each=2*n.1)+rnorm(2*(J+1)*n.1,0,sd.t.meas)
-    l.obs<-rep(l,2*(J+1))+rep(scanner.bias,each=2*n.1)+rep(coil.bias,each=n.1)+rep(site.eff.l,each=2*n.1)+rnorm(2*(J+1)*n.1,0,sd.l.meas)
+    t.obs<-rep(t,2*(J+1))+rep(scanner.bias,each=2*n.1.dropout)+rep(coil.bias,each=n.1.dropout)+rep(site.eff.t,each=2*n.1.dropout)+rnorm(2*(J+1)*n.1.dropout,0,sd.t.meas)
+    l.obs<-rep(l,2*(J+1))+rep(scanner.bias,each=2*n.1.dropout)+rep(coil.bias,each=n.1.dropout)+rep(site.eff.l,each=2*n.1.dropout)+rnorm(2*(J+1)*n.1.dropout,0,sd.l.meas)
 
     #Do permutation tests
     t.p[b]<-perm.test.F(t.obs,site,id)
@@ -317,9 +337,12 @@ get.power.phase1.longit.dropout<-function(sd.site.longit,longit.bias.par,B=500) 
 
 # LOOK AT HOW SMALL THE MANUFACTURER BIASES CAN BE
 set.seed(529349245)
-mclapply(seq(0,1,by=0.1),get.power.phase1.longit.dropout,0,B=500,mc.cores=20)
+print('AIM 2 - LONGITUDINAL ANALYSES WITH DROPOUT')
+system.time(out3<-mclapply(seq(0,1,by=0.1),get.power.phase1.longit.dropout,0,B=500,mc.cores=20))
+print(out3)
 switch.args<-function(longit.bias.par,sd.site.longit,B) get.power.phase1.longit.dropout(sd.site.longit,longit.bias.par,B)
-mclapply(seq(0,1,by=0.1),switch.args,0,B=500,mc.cores=20)
+system.time(out4<-mclapply(seq(0,1,by=0.1),switch.args,0,B=500,mc.cores=20))
+print(out4)
 
 # we can detect:
 # for thalamus - longitudinal scanner platform effects of 0.4mL or larger (under assumptions)
@@ -428,7 +451,7 @@ get.power.phase2.longit.dropout<-function(longit.bias.par,bias.par,B=500) {
 
     #Sample dropout
     full.df<-data.frame(l.obs.phase2,t.obs.phase2,scanner.vec.phase2,sex.vec.phase2,dd.vec.phase2,time.in.study.vec,site.fac.phase2,id.vec.phase2,coil.fac.phase2)
-    which.lost.to.fu<-sample(1:n.2,size=0.3*n.2)
+    which.lost.to.fu<-sample(1:n.2,size=prop.dropout.phase2*n.2)
     which.fu<-which(visit.id==1)
     which.fu.obs<-which.fu[!id.vec.phase2[which.fu]%in%which.lost.to.fu]
     dropout.df<-full.df[c(which(visit.id==0),which.fu.obs),]
@@ -455,9 +478,17 @@ get.power.phase2.longit.dropout<-function(longit.bias.par,bias.par,B=500) {
     }
   c(mean(t.p.scanner<0.05),mean(l.p.scanner<0.05),mean(t.p.coil<0.05),mean(l.p.coil<0.05))
 }
-
+print('AIM 2 - LONGITUDINAL PHASE II POWER CALCULATIONS FOR SCANNER AND COIL EFFECTS')
 set.seed(529349245)
-mclapply(seq(0,0.5,by=0.05),get.power.phase2.longit.dropout,bias.par=0,B=500,mc.cores=20)
-mclapply(seq(0,0.5,by=0.05),get.power.phase2.longit.dropout,bias.par=1,B=500,mc.cores=20)
-mclapply(seq(0.5,0.9,by=0.05),get.power.phase2.longit.dropout,bias.par=0,B=500,mc.cores=20)
-mclapply(seq(0.5,0.9,by=0.05),get.power.phase2.longit.dropout,bias.par=1,B=500,mc.cores=20)
+system.time(out5<-mclapply(seq(0,0.5,by=0.05),get.power.phase2.longit.dropout,bias.par=0,B=500,mc.cores=20))
+print(out5)
+system.time(out6<-mclapply(seq(0,0.5,by=0.05),get.power.phase2.longit.dropout,bias.par=1,B=500,mc.cores=20))
+print(out6)
+system.time(out7<-mclapply(seq(0.5,0.9,by=0.05),get.power.phase2.longit.dropout,bias.par=0,B=500,mc.cores=20))
+print(out7)
+system.time(out8<-mclapply(seq(0.5,0.9,by=0.05),get.power.phase2.longit.dropout,bias.par=1,B=500,mc.cores=20))
+print(out8)
+
+save(out,out1,out2,out3,out4,out5,out6,out7,out8,paste0('dataoutput_n30_dropout',n.1.dropout,'-',prop.dropout.phase2,'.RData'))
+
+sink()
