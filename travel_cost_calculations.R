@@ -1,16 +1,8 @@
 ############################################################################################################
-# Power calculations for NAIMS Traveling Study
+# Travel Cost Calculations for NAIMS Traveling Study
 # Russell Shinohara
-# August 7, 2018
+# October 2018 Submission
 ############################################################################################################
-
-##### Should we include an inflation factor to ensure feasibility?
-
-###
-# SCANNING COST
-###
-# per 2-hour scanning session without contrast
-scan.cost<-1500
 
 ###
 # MISCELLANEOUS EXPENSES
@@ -19,12 +11,6 @@ scan.cost<-1500
 # Accessed December 19, 2017 - SREA Reimbursement - $235 for miscellaneous expenses (taxis, shuttles, luggage fees, 
 # internet Wi-Fi, airport parking fees, tolls, mileage reimbursement to and from the home destination, etc.)
 misc.cost<-235
-
-###
-# PATIENT COMPENSATION
-###
-# per MRI-visit compensation  - per discussion with Rob, will compensate at 2x200/hour
-pt.cost<-2*200
 
 ###
 # TRANSIT COSTS
@@ -37,7 +23,6 @@ travel.costs.cities<-read.csv('~/Dropbox/Documents/Grants/NIH/NAIMS_Traveling_R0
 travel.costs.cities<-t(matrix(as.numeric(levels(unlist(travel.costs.cities))[unlist(travel.costs.cities)]),nrow=8))
 rownames(travel.costs.cities)<-cities.unique
 colnames(travel.costs.cities)<-cities.unique
-
 
 ###
 # HOTEL COSTS
@@ -144,18 +129,12 @@ travel.costs[3]<-travel.costs.cities[8,4]+travel.costs.cities[4,3]+travel.costs.
 phase1.travelcost[8]<-hotel.costs.this+sum(travel.costs)+misc.cost*7
 
 #These are travel cost estimates for one time point only
-
 mean(phase1.travelcost)
+
 ## PHASE I TRAVEL COSTS = ~ 5400 per participant per timepoint
 mean(phase1.travelcost)*2*n.1
 # = 32,200 for two time points
 
-9*scan.cost+10*pt.cost # NIH DOESN'T CHARGE FOR SCANS
-## PHASE I SCANNING COSTS = ~17,500 per participant per timepoint
-(9*scan.cost+10*pt.cost)*2*n.1
-# = 105,000 for two time points
-
-# TOTAL PHASE I ACQUISITION COSTS = 137,200
 
 ############################################################################################################
 ############################################################################################################
@@ -195,19 +174,10 @@ estimate.total.travel.costs<-function() {
   total.travel.costs
 }
 
-total.scan.costs<-scan.cost*n.2*n.scans-scan.cost*(n.subj.persite+n.2*(n.scans-1)/length(sites)) #expected number of scans at NIH site = n.subj.persite+n.2*(n.scans-1)/length(sites)
-total.pt.costs<-n.2*n.scans*pt.cost
-
 ## PHASE II TRAVEL COSTS = ~ 46,000 per timepoint
 set.seed(32542)
 mean(replicate(1000,estimate.total.travel.costs()))*2
 # = 92,000 for two time points
-
-## PHASE I SCANNING COSTS = 157,500 per timepoint
-(total.scan.costs+total.pt.costs)*2
-# = 315,000 for two time points
-
-# TOTAL PHASE II ACQUISITION COSTS = 407,000
 
 ############################################################################################################
 ############################################################################################################
@@ -219,15 +189,3 @@ mean(replicate(1000,estimate.total.travel.costs()))*2
 set.seed(32542); mean(phase1.travelcost)*2*n.1+mean(replicate(1000,estimate.total.travel.costs()))*2
 # = 124,100
 
-# TOTAL PATIENT COMPENSTATION COSTS
-(10*pt.cost)*2*n.1 + (total.pt.costs)*2
-#  = 96,000
-
-# TOTAL SCANNER TIME COSTS
-(9*scan.cost)*2*n.1 + (total.scan.costs)*2
-#  = 324,000
-
-### PER-SITE COSTS
-n.scans.persite<-n.subj.persite+n.2*(n.scans-1)/length(sites)
-2*(3*scan.cost+n.scans.persite*scan.cost) # average total scanning cost per site
-# = 36,000
